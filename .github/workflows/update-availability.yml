@@ -22,8 +22,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Preparar notificações
+        run: |
+          npm install --omit=dev
+          cp data/availability.json "$RUNNER_TEMP/availability-before.json"
       - name: Consultar agenda
         run: node scripts/update-availability.mjs
+      - name: Avisar novas vagas
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+          PREVIOUS_AVAILABILITY_FILE: ${{ runner.temp }}/availability-before.json
+        run: node scripts/send-push.mjs
       - name: Publicar atualização
         run: |
           git config user.name "ciclo-do-corte-bot"
