@@ -12,6 +12,23 @@ const { default: webpush } = await import("web-push");
 
 const config = JSON.parse(fs.readFileSync("data/push-config.json", "utf8"));
 const current = JSON.parse(fs.readFileSync("data/availability.json", "utf8"));
+const subscription = JSON.parse(subscriptionText);
+
+webpush.setVapidDetails(
+  "https://5575dd.github.io/ciclo-do-corte/",
+  config.publicKey,
+  privateKey
+);
+
+if (process.env.FORCE_TEST === "true") {
+  await webpush.sendNotification(subscription, JSON.stringify({
+    test: true,
+    changeId: "test-" + new Date().toISOString()
+  }), { TTL: 60 });
+  console.log("Notificação de teste enviada.");
+  process.exit(0);
+}
+
 const previousPath = process.env.PREVIOUS_AVAILABILITY_FILE;
 const previous = previousPath && fs.existsSync(previousPath)
   ? JSON.parse(fs.readFileSync(previousPath, "utf8"))
@@ -34,13 +51,6 @@ if (!Object.keys(opened).length) {
   process.exit(0);
 }
 
-webpush.setVapidDetails(
-  "https://5575dd.github.io/ciclo-do-corte/",
-  config.publicKey,
-  privateKey
-);
-
-const subscription = JSON.parse(subscriptionText);
 const payload = JSON.stringify({
   availability: current,
   opened,
