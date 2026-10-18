@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "15 */6 * * *"
   workflow_dispatch:
+    inputs:
+      test_notification:
+        description: "Enviar uma notificação de teste"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -33,6 +39,7 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
           PREVIOUS_AVAILABILITY_FILE: ${{ runner.temp }}/availability-before.json
+          FORCE_TEST: ${{ inputs.test_notification }}
         run: node scripts/send-push.mjs
       - name: Publicar atualização
         run: |
