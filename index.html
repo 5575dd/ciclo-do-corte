@@ -29,12 +29,12 @@
     </header>
     <section class="hero">
       <div class="hero-main">
-        <div><div class="eyebrow">Seu ritmo, sem correria</div><h1>Um corte a cada duas semanas.</h1><p>O painel acompanha a data principal, mantém uma reserva de segurança sete dias depois e recalcula o ciclo quando você confirma o corte.</p></div>
+        <div><div class="eyebrow">Seu ritmo, sem correria</div><h1>Um corte a cada duas semanas.</h1><p>O painel acompanha os sábados, prioriza horários a partir das 13h e começa cada busca assim que a data entra na janela de 30 dias.</p></div>
         <div class="actions"><button class="btn primary" id="didCut">✓ Cortei nessa data</button><button class="btn danger" id="missed">Não consegui cortar</button><a class="btn secondary" href="https://bmsistemasdev.site/app/barbeariafreitas1029/index.php" target="_blank" rel="noreferrer">Abrir agenda oficial ↗</a></div>
       </div>
       <aside class="hero-side">
         <div><div class="next-label">Próximo corte marcado</div><div class="big-date" id="heroDate">31 OUT<small id="heroDetail">sábado · Corte · Igor Freitas</small></div></div>
-        <div class="mini-row"><div class="mini"><span>Intervalo</span><strong>14 dias</strong></div><div class="mini"><span>Preferência</span><strong id="preferenceLabel">Qualquer horário</strong></div></div>
+        <div class="mini-row"><div class="mini"><span>Intervalo</span><strong>14 dias</strong></div><div class="mini"><span>Preferência</span><strong id="preferenceLabel">A partir das 13h</strong></div></div>
       </aside>
     </section>
     <div class="notice" id="notice"></div>
@@ -48,20 +48,20 @@
 
     <div class="head"><div><h2>Como funciona</h2><p>Uma decisão simples mantém as próximas datas no lugar.</p></div></div>
     <section class="timeline">
-      <div class="row"><div class="icon">1</div><div><strong>O monitor verifica as vagas</strong><span>A disponibilidade é atualizada automaticamente a cada seis horas.</span></div><time>Automático</time></div>
+      <div class="row"><div class="icon">1</div><div><strong>O monitor verifica as vagas</strong><span>Cada sábado começa a ser acompanhado 30 dias antes, somente a partir das 13h.</span></div><time>Automático</time></div>
       <div class="row"><div class="icon">2</div><div><strong>Você confirma se cortou</strong><span>Use “Cortei” ou “Não consegui cortar” no dia.</span></div><time>1 toque</time></div>
       <div class="row"><div class="icon">3</div><div><strong>O ciclo avança</strong><span>As próximas datas são recalculadas em sete e quatorze dias.</span></div><time>Sempre sábado</time></div>
     </section>
 
     <details><summary>Ajustar preferências</summary><div class="settings">
       <label>Data principal atual<input type="date" id="anchorInput"></label>
-      <label>Horário preferido<select id="preferenceInput"><option>Qualquer horário</option><option>Manhã</option><option>Depois das 12h</option><option>Fim da tarde</option></select></label>
+      <label>Horário preferido<select id="preferenceInput"><option>A partir das 13h</option><option>Qualquer horário</option><option>Manhã</option><option>Depois das 12h</option><option>Fim da tarde</option></select></label>
       <label>Telefone com DDD<input type="tel" id="phoneInput" inputmode="numeric" autocomplete="tel" placeholder="Informe uma vez neste aparelho"></label>
       <label>Aplicativo no celular<button class="btn secondary" type="button" id="install">Instalar na tela inicial</button></label>
       <div class="settings-actions"><button class="btn secondary" id="pause">Pausar neste painel</button><button class="btn primary" id="save">Salvar preferências</button></div>
     </div></details>
 
-    <div class="head"><div><h2>Agendamento</h2><p>As confirmações finais continuam no sistema oficial da barbearia.</p></div></div>
+    <div class="head"><div><h2>Agendamento</h2><p>Quando surgir uma vaga, você recebe o horário escolhido e confirma a marcação.</p></div></div>
     <div class="actions"><a class="btn primary" href="https://bmsistemasdev.site/app/barbeariafreitas1029/index.php" target="_blank" rel="noreferrer">Marcar horário</a><button class="btn secondary" type="button" id="appointments">Ver ou desmarcar</button><button class="btn secondary" type="button" id="notifications">Ativar avisos no celular</button></div>
     <footer>Seu telefone e o estado do ciclo ficam somente neste aparelho.<br>Disponibilidade consultada no sistema oficial da Barbearia Freitas.</footer>
   </div>

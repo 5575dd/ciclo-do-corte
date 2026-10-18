@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v1";
+const CACHE_NAME = "ciclo-do-corte-v2";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 
@@ -8,7 +8,14 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(Promise.all([
+    self.clients.claim(),
+    caches.keys().then((names) => Promise.all(
+      names
+        .filter((name) => name.startsWith("ciclo-do-corte-v") && name !== CACHE_NAME)
+        .map((name) => caches.delete(name))
+    ))
+  ]));
 });
 
 self.addEventListener("fetch", (event) => {
@@ -68,6 +75,7 @@ function minutes(time) {
 }
 
 function filterPreference(slots, preference) {
+  if (preference === "A partir das 13h") return slots.filter((slot) => minutes(slot) >= 780);
   if (preference === "Manhã") return slots.filter((slot) => minutes(slot) < 720);
   if (preference === "Depois das 12h") return slots.filter((slot) => minutes(slot) >= 720);
   if (preference === "Fim da tarde") return slots.filter((slot) => minutes(slot) >= 960);

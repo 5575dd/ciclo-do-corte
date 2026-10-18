@@ -2,7 +2,8 @@
   const KEY = "ciclo-do-corte-mobile-v1";
   const DEFAULT_STATE = {
     anchor: "2026-10-31",
-    preference: "Qualquer horário",
+    preference: "A partir das 13h",
+    settingsVersion: 2,
     phone: "",
     paused: false,
     history: [],
@@ -22,6 +23,11 @@
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
     state = { ...DEFAULT_STATE, ...saved, appointments: { ...DEFAULT_STATE.appointments, ...(saved.appointments || {}) } };
+    if ((saved.settingsVersion || 0) < 2) {
+      state.preference = "A partir das 13h";
+      state.settingsVersion = 2;
+      localStorage.setItem(KEY, JSON.stringify(state));
+    }
   } catch {
     state = structuredClone(DEFAULT_STATE);
   }
@@ -87,6 +93,7 @@
   }
 
   function preferredSlots(slots) {
+    if (state.preference === "A partir das 13h") return slots.filter((slot) => minuteValue(slot) >= 780);
     if (state.preference === "Manhã") return slots.filter((slot) => minuteValue(slot) < 720);
     if (state.preference === "Depois das 12h") return slots.filter((slot) => minuteValue(slot) >= 720);
     if (state.preference === "Fim da tarde") return slots.filter((slot) => minuteValue(slot) >= 960);
