@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v3";
+const CACHE_NAME = "ciclo-do-corte-v4";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
@@ -43,13 +43,24 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data?.json() || null;
   } catch {}
-  event.waitUntil(checkAvailability(payload));
+  event.waitUntil(payload?.test ? showTestNotification() : checkAvailability(payload));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(self.clients.openWindow(self.registration.scope));
 });
+
+async function showTestNotification() {
+  await self.registration.showNotification("Teste do Ciclo do Corte", {
+    body: "Tudo certo! Este celular receberá avisos quando surgir uma vaga.",
+    icon: new URL("icon.svg", self.registration.scope).href,
+    badge: new URL("icon.svg", self.registration.scope).href,
+    tag: "haircut-test",
+    renotify: true,
+    data: { url: self.registration.scope }
+  });
+}
 
 async function saveText(name, value) {
   const cache = await caches.open(STATE_CACHE);
