@@ -1,0 +1,33 @@
+name: Atualizar horários
+
+on:
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: availability-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Consultar agenda
+        run: node scripts/update-availability.mjs
+      - name: Publicar atualização
+        run: |
+          git config user.name "ciclo-do-corte-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/availability.json
+          git diff --cached --quiet || git commit -m "Atualiza horários disponíveis"
+          git push
