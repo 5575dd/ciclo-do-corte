@@ -10,14 +10,36 @@ function iso(date) {
 }
 
 async function slotsFor(date) {
-  const endpoint = new URL("https://bmsistemasdev.site/app/API/horariosLivres.php");
-  endpoint.searchParams.set("id_assinante", subscriberId);
-  endpoint.searchParams.set("profissional", professionalId);
-  endpoint.searchParams.set("data", date);
-  const response = await fetch(endpoint, { headers: { accept: "application/json" } });
-  if (!response.ok) throw new Error("Availability request failed for " + date);
-  const payload = await response.json();
-  return Array.isArray(payload.HorariosLivres) ? payload.HorariosLivres : [];
+  const params = new URLSearchParams({
+    id_assinante: subscriberId,
+    profissional: professionalId,
+    data: date,
+    ts: String(Date.now())
+  });
+  const source = "http://bmsistemasdev.site/app/API/horariosLivres.php?" + params.toString();
+  const proxy = "https://r.jina.ai/" + source.replaceAll("&", "%26");
+
+  try {
+    const response = await fetch(proxy, {
+      headers: { accept: "text/plain", "x-no-cache": "true" },
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) throw new Error("Proxy request failed with " + response.status);
+    const text = await response.text();
+    const match = text.match(/\{"HorariosLivres"\s*:\s*\[[^\]]*\]\}/);
+    if (!match) throw new Error("Availability data not found in proxy response");
+    const payload = JSON.parse(match[0]);
+    return Array.isArray(payload.HorariosLivres) ? payload.HorariosLivres : [];
+  } catch (proxyError) {
+    const endpoint = new URL(source.replace("http://", "https://"));
+    const response = await fetch(endpoint, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) throw new Error("Availability request failed for " + date, { cause: proxyError });
+    const payload = await response.json();
+    return Array.isArray(payload.HorariosLivres) ? payload.HorariosLivres : [];
+  }
 }
 
 const start = new Date();
