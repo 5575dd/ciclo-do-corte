@@ -87,6 +87,37 @@
     element.classList.add("show");
   }
 
+  function base64UrlFromBytes(bytes) {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function bytesFromBase64Url(value) {
+    const padding = "=".repeat((4 - value.length % 4) % 4);
+    const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+  }
+
+  async function showActivationCode(subscription) {
+    const code = base64UrlFromBytes(new TextEncoder().encode(JSON.stringify(subscription.toJSON())));
+    localStorage.setItem("ciclo-do-corte-push-code", code);
+    const element = document.getElementById("notice");
+    element.innerHTML = "<strong>Último passo:</strong> copie o código abaixo e envie nesta conversa uma única vez. Depois disso, os avisos chegam mesmo com o painel fechado.<div class=\"activation\"><textarea id=\"activationCode\" readonly aria-label=\"Código de ativação\"></textarea><button class=\"btn primary\" type=\"button\" id=\"copyActivation\">Copiar código</button></div>";
+    element.classList.add("show");
+    document.getElementById("activationCode").value = code;
+    document.getElementById("copyActivation").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+        toast("Código copiado. Envie nesta conversa.");
+      } catch {
+        document.getElementById("activationCode").select();
+        document.execCommand("copy");
+        toast("Código copiado. Envie nesta conversa.");
+      }
+    });
+  }
+
   function minuteValue(time) {
     const [hour, minute] = time.split(":").map(Number);
     return hour * 60 + minute;
@@ -195,21 +226,36 @@
       notice("Este navegador não oferece avisos em segundo plano. Você ainda pode instalar o painel e abri-lo normalmente.");
       return;
     }
+    if (!window.matchMedia("(display-mode: standalone)").matches && /iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      notice("No iPhone, abra este painel pelo ícone instalado na Tela de Início e toque novamente em “Ativar avisos”.");
+      return;
+    }
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
       notice("Os avisos não foram autorizados. Você pode alterar essa permissão nas configurações do navegador.");
       return;
     }
     const registration = await navigator.serviceWorker.ready;
+    try {
+      const configResponse = await fetch("data/push-config.json", { cache: "no-store" });
+      if (!configResponse.ok) throw new Error("push config unavailable");
+      const config = await configResponse.json();
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: bytesFromBase64Url(config.publicKey)
+        });
+      }
+      await showActivationCode(subscription);
+    } catch {
+      notice("A permissão foi aceita, mas não foi possível concluir a ativação agora. Verifique a internet e tente novamente.");
+      return;
+    }
     if ("periodicSync" in registration) {
       try {
         await registration.periodicSync.register("check-availability", { minInterval: 12 * 60 * 60 * 1000 });
-        toast("Avisos ativados no celular.");
-      } catch {
-        notice("Os avisos foram permitidos, mas o celular decidirá quando verificar em segundo plano. Instalar o painel na tela inicial melhora o funcionamento.");
-      }
-    } else {
-      notice("Os avisos foram permitidos. Neste celular, a consulta em segundo plano pode depender de você abrir o painel de vez em quando.");
+      } catch {}
     }
   }
 

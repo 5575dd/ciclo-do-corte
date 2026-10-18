@@ -1,6 +1,6 @@
-const CACHE_NAME = "ciclo-do-corte-v2";
+const CACHE_NAME = "ciclo-do-corte-v3";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
-const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg"];
+const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -36,6 +36,14 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "check-availability") event.waitUntil(checkAvailability());
+});
+
+self.addEventListener("push", (event) => {
+  let payload = null;
+  try {
+    payload = event.data?.json() || null;
+  } catch {}
+  event.waitUntil(checkAvailability(payload));
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -82,27 +90,31 @@ function filterPreference(slots, preference) {
   return slots;
 }
 
-async function checkAvailability() {
+async function checkAvailability(payload = null) {
   const rawState = await readText("state.json");
   if (!rawState) return;
   const state = JSON.parse(rawState);
   if (state.paused) return;
 
-  const dataUrl = new URL("data/availability.json?ts=" + Date.now(), self.registration.scope);
-  const response = await fetch(dataUrl, { cache: "no-store" });
-  if (!response.ok) return;
-  const availability = await response.json();
+  let availability = payload?.availability || null;
+  if (!availability) {
+    const dataUrl = new URL("data/availability.json?ts=" + Date.now(), self.registration.scope);
+    const response = await fetch(dataUrl, { cache: "no-store" });
+    if (!response.ok) return;
+    availability = await response.json();
+  }
+  const sourceDates = payload?.opened || availability.dates || {};
   const dates = [state.anchor, addDays(state.anchor, 7), addDays(state.anchor, 14)];
   const matches = [];
 
   for (const date of dates) {
     if (state.appointments?.[date]) continue;
-    const slots = filterPreference(availability.dates?.[date] || [], state.preference);
+    const slots = filterPreference(sourceDates[date] || [], state.preference);
     if (slots.length) matches.push({ date, slots });
   }
 
   if (!matches.length) return;
-  const notificationKey = JSON.stringify(matches);
+  const notificationKey = JSON.stringify({ matches, changeId: payload?.changeId || null });
   if (notificationKey === await readText("last-notification.txt")) return;
   await saveText("last-notification.txt", notificationKey);
 
