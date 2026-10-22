@@ -7,6 +7,8 @@
     phone: "",
     paused: false,
     history: [],
+    pendingOffer: null,
+    dismissedOffers: [],
     appointments: {
       "2026-10-31": "16:30",
       "2026-11-14": "16:30"
@@ -18,11 +20,13 @@
   const weekdays = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
   let availability = { updatedAt: null, windowEnd: null, dates: {} };
   let installPrompt = null;
+  let currentOffer = null;
   let state;
 
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
     state = { ...DEFAULT_STATE, ...saved, appointments: { ...DEFAULT_STATE.appointments, ...(saved.appointments || {}) } };
+    if (!Array.isArray(state.dismissedOffers)) state.dismissedOffers = [];
     if ((saved.settingsVersion || 0) < 2) {
       state.preference = "A partir das 13h";
       state.settingsVersion = 2;
@@ -131,6 +135,75 @@
     return slots;
   }
 
+  function validOffer(date, time) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date || "") && /^\d{2}:\d{2}$/.test(time || "");
+  }
+
+  function offerKey(offer) {
+    return offer.date + "@" + offer.time;
+  }
+
+  function offerFromLocation() {
+    const url = new URL(window.location.href);
+    const date = url.searchParams.get("offerDate");
+    const time = url.searchParams.get("offerTime");
+    if (!validOffer(date, time)) return null;
+    url.searchParams.delete("offerDate");
+    url.searchParams.delete("offerTime");
+    history.replaceState(null, "", url.pathname + (url.search ? url.search : "") + url.hash);
+    return { date, time };
+  }
+
+  function showOffer(offer, pending = false) {
+    if (!offer || !validOffer(offer.date, offer.time) || state.appointments[offer.date]) return;
+    currentOffer = offer;
+    const element = document.getElementById("offer");
+    document.getElementById("offerKicker").textContent = pending ? "Confirmação em andamento" : "Vaga encontrada";
+    document.getElementById("offerTitle").textContent = longDate(offer.date) + " às " + offer.time;
+    document.getElementById("offerText").textContent = pending
+      ? "Abra a agenda oficial para concluir. Depois, volte aqui e toque em “Já marquei”."
+      : "Confirme aqui no aplicativo. A agenda oficial abrirá com a data já escolhida.";
+    document.getElementById("confirmOffer").textContent = pending ? "Abrir agenda oficial" : "Confirmar no app";
+    document.getElementById("dismissOffer").textContent = pending ? "Descartar" : "Agora não";
+    document.getElementById("markBooked").hidden = !pending;
+    element.classList.add("show");
+  }
+
+  function hideOffer() {
+    currentOffer = null;
+    document.getElementById("offer").classList.remove("show");
+  }
+
+  function bestAvailableOffer() {
+    const today = iso(new Date());
+    for (const offset of [0, 7, 14, 21, 28]) {
+      const date = addDays(state.anchor, offset);
+      if (date < today || state.appointments[date]) continue;
+      if (availability.windowEnd && date > availability.windowEnd) continue;
+      const slots = preferredSlots(availability.dates?.[date] || []).sort((a, b) => minuteValue(a) - minuteValue(b));
+      for (const time of slots) {
+        const offer = { date, time };
+        if (!state.dismissedOffers.includes(offerKey(offer))) return offer;
+      }
+    }
+    return null;
+  }
+
+  function renderOffer() {
+    if (state.pendingOffer && validOffer(state.pendingOffer.date, state.pendingOffer.time) && !state.appointments[state.pendingOffer.date]) {
+      showOffer(state.pendingOffer, true);
+      return;
+    }
+    const offer = bestAvailableOffer();
+    if (offer) showOffer(offer);
+    else hideOffer();
+  }
+
+  function openOfficialOffer(offer) {
+    const url = "https://bmsistemasdev.site/app/barbeariafreitas1029/profissional.php?data=" + encodeURIComponent(offer.date);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   function renderAvailability(date, elementId) {
     const element = document.getElementById(elementId);
     const bookedTime = state.appointments[date];
@@ -197,6 +270,7 @@
       if (!response.ok) throw new Error("availability unavailable");
       availability = await response.json();
       render();
+      renderOffer();
       if (showFeedback) toast("Horários atualizados.");
     } catch {
       render();
@@ -284,6 +358,36 @@
   });
 
   document.getElementById("refresh").addEventListener("click", () => refreshAvailability(true));
+  document.getElementById("confirmOffer").addEventListener("click", () => {
+    if (!currentOffer) return;
+    state.pendingOffer = { ...currentOffer };
+    state.dismissedOffers = state.dismissedOffers.filter((key) => key !== offerKey(currentOffer));
+    persist();
+    showOffer(state.pendingOffer, true);
+    openOfficialOffer(state.pendingOffer);
+    toast("Data confirmada no app. Conclua na agenda oficial.");
+  });
+  document.getElementById("dismissOffer").addEventListener("click", () => {
+    if (!currentOffer) return;
+    const key = offerKey(currentOffer);
+    state.dismissedOffers = [key, ...state.dismissedOffers.filter((value) => value !== key)].slice(0, 30);
+    if (state.pendingOffer && offerKey(state.pendingOffer) === key) state.pendingOffer = null;
+    persist();
+    hideOffer();
+    toast("Esta opção foi dispensada.");
+  });
+  document.getElementById("markBooked").addEventListener("click", () => {
+    if (!state.pendingOffer) return;
+    const offer = state.pendingOffer;
+    state.appointments[offer.date] = offer.time;
+    state.pendingOffer = null;
+    state.dismissedOffers = state.dismissedOffers.filter((key) => key !== offerKey(offer));
+    persist();
+    hideOffer();
+    render();
+    notice("Agendamento salvo no aplicativo: <strong>" + longDate(offer.date) + " às " + offer.time + "</strong>.");
+    toast("Agendamento registrado no app.");
+  });
   document.getElementById("save").addEventListener("click", () => {
     const date = document.getElementById("anchorInput").value;
     const phone = document.getElementById("phoneInput").value.replace(/\D/g, "");
@@ -334,7 +438,10 @@
     installPrompt = event;
   });
 
+  const linkedOffer = offerFromLocation();
   render();
+  if (linkedOffer) showOffer(linkedOffer);
+  else if (state.pendingOffer) showOffer(state.pendingOffer, true);
   registerServiceWorker();
   refreshAvailability(false);
 }());

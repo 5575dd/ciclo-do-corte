@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v4";
+const CACHE_NAME = "ciclo-do-corte-v5";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
@@ -48,8 +48,19 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(self.clients.openWindow(self.registration.scope));
+  const targetUrl = event.notification.data?.url || self.registration.scope;
+  event.waitUntil(openApp(targetUrl));
 });
+
+async function openApp(targetUrl) {
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const appWindow = windows.find((client) => client.url.startsWith(self.registration.scope));
+  if (appWindow) {
+    await appWindow.navigate(targetUrl);
+    return appWindow.focus();
+  }
+  return self.clients.openWindow(targetUrl);
+}
 
 async function showTestNotification() {
   await self.registration.showNotification("Teste do Ciclo do Corte", {
@@ -115,12 +126,13 @@ async function checkAvailability(payload = null) {
     availability = await response.json();
   }
   const sourceDates = payload?.opened || availability.dates || {};
-  const dates = [state.anchor, addDays(state.anchor, 7), addDays(state.anchor, 14)];
+  const dates = [0, 7, 14, 21, 28].map((offset) => addDays(state.anchor, offset));
   const matches = [];
 
   for (const date of dates) {
     if (state.appointments?.[date]) continue;
-    const slots = filterPreference(sourceDates[date] || [], state.preference);
+    if (state.pendingOffer?.date === date) continue;
+    const slots = filterPreference(sourceDates[date] || [], state.preference).sort((a, b) => minutes(a) - minutes(b));
     if (slots.length) matches.push({ date, slots });
   }
 
@@ -130,12 +142,16 @@ async function checkAvailability(payload = null) {
   await saveText("last-notification.txt", notificationKey);
 
   const first = matches[0];
+  const offerUrl = new URL("./", self.registration.scope);
+  offerUrl.searchParams.set("offerDate", first.date);
+  offerUrl.searchParams.set("offerTime", first.slots[0]);
   await self.registration.showNotification("Horário disponível para corte", {
-    body: first.date.split("-").reverse().join("/") + ": " + first.slots.join(", "),
+    body: first.date.split("-").reverse().join("/") + " às " + first.slots[0] + ". Toque para confirmar no app.",
     icon: new URL("icon.svg", self.registration.scope).href,
     badge: new URL("icon.svg", self.registration.scope).href,
     tag: "haircut-availability",
     renotify: true,
-    data: { url: self.registration.scope }
+    actions: [{ action: "confirm", title: "Confirmar no app" }],
+    data: { url: offerUrl.href, date: first.date, time: first.slots[0] }
   });
 }
