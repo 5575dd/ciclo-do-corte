@@ -10,6 +10,11 @@ on:
         required: false
         type: boolean
         default: false
+      notify_current:
+        description: "Reenviar as vagas atuais como uma nova oferta"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -40,6 +45,7 @@ jobs:
           PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
           PREVIOUS_AVAILABILITY_FILE: ${{ runner.temp }}/availability-before.json
           FORCE_TEST: ${{ inputs.test_notification }}
+          FORCE_CURRENT: ${{ inputs.notify_current }}
         run: node scripts/send-push.mjs
       - name: Publicar atualização
         run: |

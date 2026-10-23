@@ -13,6 +13,7 @@ const { default: webpush } = await import("web-push");
 const config = JSON.parse(fs.readFileSync("data/push-config.json", "utf8"));
 const current = JSON.parse(fs.readFileSync("data/availability.json", "utf8"));
 const subscription = JSON.parse(subscriptionText);
+const forceCurrent = process.env.FORCE_CURRENT === "true";
 
 webpush.setVapidDetails(
   "https://5575dd.github.io/ciclo-do-corte/",
@@ -42,7 +43,7 @@ const minuteValue = (time) => {
 const opened = {};
 for (const [date, slots] of Object.entries(current.dates || {})) {
   const oldSlots = new Set(previous.dates?.[date] || []);
-  const newSlots = slots.filter((slot) => minuteValue(slot) >= 780 && !oldSlots.has(slot));
+  const newSlots = slots.filter((slot) => minuteValue(slot) >= 780 && (forceCurrent || !oldSlots.has(slot)));
   if (newSlots.length) opened[date] = newSlots;
 }
 
@@ -54,7 +55,7 @@ if (!Object.keys(opened).length) {
 const payload = JSON.stringify({
   availability: current,
   opened,
-  changeId: current.updatedAt || new Date().toISOString()
+  changeId: forceCurrent ? "manual-" + new Date().toISOString() : (current.updatedAt || new Date().toISOString())
 });
 
 try {
