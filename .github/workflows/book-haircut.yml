@@ -40,7 +40,7 @@ jobs:
       BOOKING_NAME: ${{ secrets.BOOKING_NAME }}
       BOOKING_PHONE: ${{ secrets.BOOKING_PHONE }}
       DRY_RUN: ${{ inputs.dry_run }}
-      BOOKING_RESULT_FILE: ${{ runner.temp }}/booking-result.json
+      BOOKING_RESULT_FILE: booking-result.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
