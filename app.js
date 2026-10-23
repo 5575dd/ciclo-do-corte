@@ -219,6 +219,18 @@
     });
   }
 
+  async function refreshBookingSetup() {
+    const element = document.getElementById("bookingActivationStatus");
+    try {
+      const setup = await workerRequest("BOOKING_SETUP");
+      element.textContent = setup?.ready
+        ? "✓ Reserva direta ativa neste aparelho. Ao confirmar uma vaga, o aplicativo fará a marcação e conferirá o resultado."
+        : "Reserva direta ainda não ativada neste aparelho. Abra o aviso de ativação quando ele chegar.";
+    } catch {
+      element.textContent = "Não foi possível verificar a ativação agora. Reabra o aplicativo com internet.";
+    }
+  }
+
   function applyBookingResult(result) {
     if (!result || !validOffer(result.date, result.time) || !result.requestId) return;
     if (state.lastBookingResultId === result.requestId) return;
@@ -540,7 +552,11 @@
   else if (linkedOffer) showOffer(linkedOffer);
   navigator.serviceWorker?.addEventListener("message", (event) => {
     if (event.data?.type === "BOOKING_RESULT") applyBookingResult(event.data.result);
+    if (event.data?.type === "BOOKING_ACTIVATED") refreshBookingSetup();
   });
-  registerServiceWorker().then(startBookingPolling);
+  registerServiceWorker().then(() => {
+    refreshBookingSetup();
+    startBookingPolling();
+  });
   refreshAvailability(false);
 }());

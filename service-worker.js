@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v6";
+const CACHE_NAME = "ciclo-do-corte-v7";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
@@ -148,6 +148,8 @@ async function bookingStatus(requestId) {
 async function activateBooking(token) {
   if (typeof token !== "string" || token.length < 20) return;
   await saveText("booking-token.txt", token);
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of windows) client.postMessage({ type: "BOOKING_ACTIVATED" });
   await self.registration.showNotification("Reserva direta ativada", {
     body: "Agora você pode tocar em Confirmar no Ciclo do Corte para reservar o horário.",
     icon: new URL("icon.svg", self.registration.scope).href,
