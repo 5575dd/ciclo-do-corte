@@ -1,6 +1,6 @@
-const CACHE_NAME = "ciclo-do-corte-v9";
+const CACHE_NAME = "ciclo-do-corte-v10";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
-const APP_SHELL = ["./", "./index.html", "./app.js?v=9", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
+const APP_SHELL = ["./", "./index.html", "./app.js?v=10", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all(

@@ -378,6 +378,36 @@
     renderAvailability(state.anchor, "mainAvailability");
     renderAvailability(backup, "backupAvailability");
     renderAvailability(regular, "regularAvailability");
+    renderExtraAppointments([state.anchor, backup, regular]);
+  }
+
+  function renderExtraAppointments(visibleDates) {
+    const today = iso(new Date());
+    const appointments = Object.entries(state.appointments || {})
+      .filter(([date, time]) => date >= today && time && !visibleDates.includes(date))
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+    const section = document.getElementById("extraAppointments");
+    const list = document.getElementById("extraAppointmentList");
+    list.replaceChildren();
+    section.hidden = appointments.length === 0;
+
+    for (const [date, time] of appointments) {
+      const card = document.createElement("article");
+      card.className = "extra-appointment card active";
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = "Marcado";
+      const heading = document.createElement("h3");
+      heading.textContent = longDate(date);
+      const weekday = document.createElement("span");
+      weekday.className = "dow";
+      weekday.textContent = dayName(date);
+      const availability = document.createElement("div");
+      availability.className = "availability good";
+      availability.textContent = "Já marcado às " + time + ".";
+      card.append(tag, heading, weekday, availability);
+      list.append(card);
+    }
   }
 
   async function refreshAvailability(showFeedback) {
