@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { parsePushSubscription } from "./push-subscription.mjs";
 
 const token = process.env.BOOKING_APP_TOKEN;
 const key = process.env.VAPID_PRIVATE_KEY;
@@ -8,7 +9,7 @@ if (!token || !key || !subscription) throw new Error("Ativação incompleta.");
 const { default: webpush } = await import("web-push");
 const config = JSON.parse(await readFile("data/push-config.json", "utf8"));
 webpush.setVapidDetails("https://5575dd.github.io/ciclo-do-corte/", config.publicKey, key);
-await webpush.sendNotification(JSON.parse(subscription), JSON.stringify({
+await webpush.sendNotification(parsePushSubscription(subscription), JSON.stringify({
   bookingActivationToken: token,
   changeId: `booking-activation-${Date.now()}`
 }), { TTL: 60 * 60 });

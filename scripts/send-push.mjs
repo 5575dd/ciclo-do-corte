@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { parsePushSubscription } from "./push-subscription.mjs";
 
 const privateKey = process.env.VAPID_PRIVATE_KEY;
 const subscriptionText = process.env.PUSH_SUBSCRIPTION;
@@ -12,7 +13,7 @@ const { default: webpush } = await import("web-push");
 
 const config = JSON.parse(fs.readFileSync("data/push-config.json", "utf8"));
 const current = JSON.parse(fs.readFileSync("data/availability.json", "utf8"));
-const subscription = JSON.parse(subscriptionText);
+const subscription = parsePushSubscription(subscriptionText);
 const forceCurrent = process.env.FORCE_CURRENT === "true";
 
 webpush.setVapidDetails(

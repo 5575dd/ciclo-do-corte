@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { parsePushSubscription } from "./push-subscription.mjs";
 
 if (process.env.DRY_RUN === "true") process.exit(0);
 const key = process.env.VAPID_PRIVATE_KEY;
@@ -18,7 +19,7 @@ const { default: webpush } = await import("web-push");
 const config = JSON.parse(await readFile("data/push-config.json", "utf8"));
 webpush.setVapidDetails("https://5575dd.github.io/ciclo-do-corte/", config.publicKey, key);
 try {
-  await webpush.sendNotification(JSON.parse(subscriptionText), JSON.stringify({
+  await webpush.sendNotification(parsePushSubscription(subscriptionText), JSON.stringify({
     bookingResult: result,
     changeId: `booking-${Date.now()}`
   }), { TTL: 60 * 60 });
