@@ -79,14 +79,14 @@ async function officialBookings() {
   return response.text();
 }
 
-function hasBooking(html, { anyService = false } = {}) {
+function hasBooking(html, { anyService = false, anyTime = false } = {}) {
   const dateBr = date.split("-").reverse().join("/");
   const escaped = `${dateBr} às ${time}`;
   const blocks = html.split(/<div\s+class="list-group-item\b/gi).slice(1);
   return blocks.some((block) => {
     const part = block.slice(0, 800);
-    return part.includes(escaped) && part.includes("Profissional: Igor Freitas")
-      && (anyService || /<strong>\s*Corte\s*<\/strong>/i.test(part));
+    return part.includes(anyTime ? dateBr + " às " : escaped) && part.includes("Profissional: Igor Freitas")
+      && (anyService || /<strong>\s*Corte\b[^<]*<\/strong>/i.test(part));
   });
 }
 
@@ -140,6 +140,7 @@ try {
       await saveResult("already_booked");
       process.exit(0);
     }
+    if (hasBooking(before, { anyTime: true })) throw new Error("date_already_booked");
     if (hasBooking(before, { anyService: true })) throw new Error("time_already_booked");
   }
 
@@ -188,7 +189,7 @@ try {
     "invalid_date", "outside_booking_window", "invalid_time", "outside_preference",
     "missing_client_details", "official_site_unavailable", "invalid_availability_response",
     "missing_booking_session", "booking_form_changed", "missing_booking_validation",
-    "time_already_booked", "slot_unavailable", "booking_not_verified"
+    "time_already_booked", "date_already_booked", "slot_unavailable", "booking_not_verified"
   ]);
   const code = allowed.has(error?.message) ? error.message : "unexpected_error";
   await saveResult(code);
