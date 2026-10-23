@@ -231,6 +231,26 @@
     }
   }
 
+  async function refreshPushDiagnostics() {
+    const element = document.getElementById("pushDiagnostics");
+    try {
+      const result = await workerRequest("PUSH_DIAGNOSTICS");
+      if (!result?.receivedAt) {
+        element.textContent = "Nenhum aviso recebido por esta versão do aplicativo ainda.";
+        return;
+      }
+      const time = new Date(result.receivedAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+      const labels = {
+        shown: "exibido", received: "recebido", "no-app-state": "aguardando sincronização",
+        paused: "monitoramento pausado", "data-unavailable": "consulta indisponível",
+        "no-match": "sem vaga para o ciclo salvo", "already-notified": "aviso já mostrado", error: "falha ao exibir"
+      };
+      element.textContent = "Último aviso no aparelho: " + time + " · " + (labels[result.status] || result.status) + ".";
+    } catch {
+      element.textContent = "Não foi possível verificar o último aviso neste aparelho.";
+    }
+  }
+
   function applyBookingResult(result) {
     if (!result || !validOffer(result.date, result.time) || !result.requestId) return;
     if (state.lastBookingResultId === result.requestId) return;
@@ -365,6 +385,10 @@
       const response = await fetch("data/availability.json?ts=" + Date.now(), { cache: "no-store" });
       if (!response.ok) throw new Error("availability unavailable");
       availability = await response.json();
+      if (showFeedback && state.dismissedOffers.length) {
+        state.dismissedOffers = [];
+        persist();
+      }
       render();
       renderOffer();
       if (showFeedback) toast("Horários atualizados.");
@@ -553,9 +577,11 @@
   navigator.serviceWorker?.addEventListener("message", (event) => {
     if (event.data?.type === "BOOKING_RESULT") applyBookingResult(event.data.result);
     if (event.data?.type === "BOOKING_ACTIVATED") refreshBookingSetup();
+    if (event.data?.type === "PUSH_DIAGNOSTICS") refreshPushDiagnostics();
   });
   registerServiceWorker().then(() => {
     refreshBookingSetup();
+    refreshPushDiagnostics();
     startBookingPolling();
   });
   refreshAvailability(false);

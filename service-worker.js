@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v7";
+const CACHE_NAME = "ciclo-do-corte-v8";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
@@ -48,6 +48,10 @@ self.addEventListener("message", (event) => {
   }
   if (event.data?.type === "BOOKING_RESULT") {
     event.waitUntil(replyTo(event, async () => JSON.parse(await readText("booking-result.json") || "null")));
+    return;
+  }
+  if (event.data?.type === "PUSH_DIAGNOSTICS") {
+    event.waitUntil(replyTo(event, async () => JSON.parse(await readText("push-diagnostics.json") || "null")));
   }
 });
 
@@ -60,13 +64,26 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data?.json() || null;
   } catch {}
-  if (payload?.bookingActivationToken) {
-    event.waitUntil(activateBooking(payload.bookingActivationToken));
-  } else if (payload?.bookingResult) {
-    event.waitUntil(showBookingResult(payload.bookingResult));
-  } else {
-    event.waitUntil(payload?.test ? showTestNotification() : checkAvailability(payload));
-  }
+  event.waitUntil((async () => {
+    const receivedAt = new Date().toISOString();
+    const type = payload?.bookingActivationToken ? "activation"
+      : payload?.bookingResult ? "booking-result"
+        : payload?.test ? "test" : "availability";
+    await savePushDiagnostics({ receivedAt, type, status: "received" });
+    try {
+      if (type === "activation") await activateBooking(payload.bookingActivationToken);
+      else if (type === "booking-result") await showBookingResult(payload.bookingResult);
+      else if (type === "test") await showTestNotification();
+      else {
+        await checkAvailability(payload);
+        return;
+      }
+      await savePushDiagnostics({ receivedAt, type, status: "shown" });
+    } catch {
+      await savePushDiagnostics({ receivedAt, type, status: "error" });
+      throw new Error("push_processing_failed");
+    }
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -188,6 +205,12 @@ async function readText(name) {
   return response ? response.text() : null;
 }
 
+async function savePushDiagnostics(value) {
+  await saveText("push-diagnostics.json", JSON.stringify(value));
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of windows) client.postMessage({ type: "PUSH_DIAGNOSTICS", value });
+}
+
 function parseDate(value) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day, 12);
@@ -217,16 +240,26 @@ function filterPreference(slots, preference) {
 }
 
 async function checkAvailability(payload = null) {
+  const receivedAt = new Date().toISOString();
   const rawState = await readText("state.json");
-  if (!rawState) return;
+  if (!rawState) {
+    await savePushDiagnostics({ receivedAt, type: "availability", status: "no-app-state" });
+    return;
+  }
   const state = JSON.parse(rawState);
-  if (state.paused) return;
+  if (state.paused) {
+    await savePushDiagnostics({ receivedAt, type: "availability", status: "paused" });
+    return;
+  }
 
   let availability = payload?.availability || null;
   if (!availability) {
     const dataUrl = new URL("data/availability.json?ts=" + Date.now(), self.registration.scope);
     const response = await fetch(dataUrl, { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      await savePushDiagnostics({ receivedAt, type: "availability", status: "data-unavailable" });
+      return;
+    }
     availability = await response.json();
   }
   const sourceDates = payload?.opened || availability.dates || {};
@@ -240,11 +273,15 @@ async function checkAvailability(payload = null) {
     if (slots.length) matches.push({ date, slots });
   }
 
-  if (!matches.length) return;
+  if (!matches.length) {
+    await savePushDiagnostics({ receivedAt, type: "availability", status: "no-match" });
+    return;
+  }
   const notificationKey = JSON.stringify({ matches, changeId: payload?.changeId || null });
-  if (notificationKey === await readText("last-notification.txt")) return;
-  await saveText("last-notification.txt", notificationKey);
-
+  if (notificationKey === await readText("last-notification.txt")) {
+    await savePushDiagnostics({ receivedAt, type: "availability", status: "already-notified" });
+    return;
+  }
   const first = matches[0];
   const offerUrl = new URL("./", self.registration.scope);
   offerUrl.searchParams.set("offerDate", first.date);
@@ -258,4 +295,6 @@ async function checkAvailability(payload = null) {
     actions: [{ action: "confirm", title: "Confirmar no app" }],
     data: { url: offerUrl.href, date: first.date, time: first.slots[0] }
   });
+  await saveText("last-notification.txt", notificationKey);
+  await savePushDiagnostics({ receivedAt, type: "availability", status: "shown", date: first.date, time: first.slots[0] });
 }
