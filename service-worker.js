@@ -1,9 +1,16 @@
-const CACHE_NAME = "ciclo-do-corte-v8";
+const CACHE_NAME = "ciclo-do-corte-v9";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
-const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
+const APP_SHELL = ["./", "./index.html", "./app.js?v=9", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all(
+    APP_SHELL.map(async (path) => {
+      const request = new Request(new URL(path, self.registration.scope));
+      const response = await fetch(request, { cache: "no-store" });
+      if (!response.ok) throw new Error("app_shell_unavailable");
+      await cache.put(request, response);
+    })
+  )));
   self.skipWaiting();
 });
 
@@ -25,7 +32,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (event.request.method === "GET" && url.origin === self.location.origin) {
-    event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+    if (event.request.mode === "navigate" || event.request.destination === "script") {
+      event.respondWith(fetch(event.request, { cache: "no-store" }).catch(() => caches.match(event.request)));
+    } else {
+      event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+    }
   }
 });
 

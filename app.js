@@ -408,7 +408,8 @@
   async function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     try {
-      await navigator.serviceWorker.register("service-worker.js");
+      const registration = await navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" });
+      await registration.update().catch(() => {});
       await syncWorker();
     } catch {
       notice("O navegador não conseguiu ativar o modo aplicativo. O painel ainda funciona normalmente quando aberto.");
