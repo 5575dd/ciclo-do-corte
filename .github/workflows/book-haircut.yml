@@ -1,0 +1,58 @@
+name: Reservar corte
+run-name: Reserva ${{ inputs.date }} ${{ inputs.time }} ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Sábado da reserva (AAAA-MM-DD)"
+        required: true
+        type: string
+      time:
+        description: "Horário (HH:MM)"
+        required: true
+        type: string
+      request_id:
+        description: "Identificador da confirmação no aplicativo"
+        required: true
+        type: string
+      dry_run:
+        description: "Validar sem reservar"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: haircut-booking-${{ inputs.date }}
+  cancel-in-progress: false
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Sao_Paulo
+      BOOKING_DATE: ${{ inputs.date }}
+      BOOKING_TIME: ${{ inputs.time }}
+      BOOKING_REQUEST_ID: ${{ inputs.request_id }}
+      BOOKING_NAME: ${{ secrets.BOOKING_NAME }}
+      BOOKING_PHONE: ${{ secrets.BOOKING_PHONE }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      BOOKING_RESULT_FILE: ${{ runner.temp }}/booking-result.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Preparar avisos
+        run: npm install --omit=dev
+      - name: Reservar e conferir no sistema oficial
+        run: node scripts/book-offer.mjs
+      - name: Enviar resultado ao aplicativo
+        if: always()
+        env:
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: node scripts/send-booking-result.mjs

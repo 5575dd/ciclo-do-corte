@@ -1,0 +1,23 @@
+name: Ativar reserva direta
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install --omit=dev
+      - name: Enviar acesso ao aplicativo
+        env:
+          BOOKING_APP_TOKEN: ${{ secrets.BOOKING_APP_TOKEN }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTION: ${{ secrets.PUSH_SUBSCRIPTION }}
+        run: node scripts/send-booking-activation.mjs

@@ -21,11 +21,12 @@
   let availability = { updatedAt: null, windowEnd: null, dates: {} };
   let installPrompt = null;
   let currentOffer = null;
+  let bookingPollTimer = null;
   let state;
 
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
-    state = { ...DEFAULT_STATE, ...saved, appointments: { ...DEFAULT_STATE.appointments, ...(saved.appointments || {}) } };
+    state = { ...DEFAULT_STATE, ...saved, appointments: saved.appointments || { ...DEFAULT_STATE.appointments } };
     if (!Array.isArray(state.dismissedOffers)) state.dismissedOffers = [];
     if ((saved.settingsVersion || 0) < 2) {
       state.preference = "A partir das 13h";
@@ -158,14 +159,17 @@
     if (!offer || !validOffer(offer.date, offer.time) || state.appointments[offer.date]) return;
     currentOffer = offer;
     const element = document.getElementById("offer");
-    document.getElementById("offerKicker").textContent = pending ? "Confirmação em andamento" : "Vaga encontrada";
+    document.getElementById("offerKicker").textContent = pending
+      ? (offer.status === "needs_check" ? "Confira o agendamento" : "Reserva em andamento")
+      : "Vaga encontrada";
     document.getElementById("offerTitle").textContent = longDate(offer.date) + " às " + offer.time;
     document.getElementById("offerText").textContent = pending
-      ? "Abra a agenda oficial para concluir. Depois, volte aqui e toque em “Já marquei”."
-      : "Confirme aqui no aplicativo. A agenda oficial abrirá com a data já escolhida.";
-    document.getElementById("confirmOffer").textContent = pending ? "Abrir agenda oficial" : "Confirmar no app";
-    document.getElementById("dismissOffer").textContent = pending ? "Descartar" : "Agora não";
-    document.getElementById("markBooked").hidden = !pending;
+      ? (offer.status === "needs_check"
+        ? "Não foi possível confirmar o resultado. Consulte seus agendamentos antes de tentar novamente."
+        : "Enviamos sua confirmação. O aplicativo mostrará o resultado após conferir a agenda da barbearia.")
+      : "Toque para reservar este corte com Igor. O aplicativo conferirá a vaga e mostrará o resultado.";
+    document.getElementById("confirmOffer").hidden = pending;
+    document.getElementById("dismissOffer").hidden = pending;
     element.classList.add("show");
   }
 
@@ -199,9 +203,89 @@
     else hideOffer();
   }
 
-  function openOfficialOffer(offer) {
-    const url = "https://bmsistemasdev.site/app/barbeariafreitas1029/profissional.php?data=" + encodeURIComponent(offer.date);
-    window.open(url, "_blank", "noopener,noreferrer");
+  async function workerRequest(type, data = {}) {
+    if (!("serviceWorker" in navigator)) throw new Error("worker_unavailable");
+    const registration = await navigator.serviceWorker.ready;
+    const worker = registration.active || navigator.serviceWorker.controller;
+    if (!worker) throw new Error("worker_unavailable");
+    return new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      const timeout = setTimeout(() => reject(new Error("worker_timeout")), 20_000);
+      channel.port1.onmessage = ({ data: answer }) => {
+        clearTimeout(timeout);
+        resolve(answer);
+      };
+      worker.postMessage({ type, ...data }, [channel.port2]);
+    });
+  }
+
+  function applyBookingResult(result) {
+    if (!result || !validOffer(result.date, result.time) || !result.requestId) return;
+    if (state.lastBookingResultId === result.requestId) return;
+    const samePending = state.pendingOffer?.requestId === result.requestId;
+    const booked = result.status === "booked" || result.status === "already_booked";
+    if (booked) {
+      state.appointments[result.date] = result.time;
+      if (samePending) state.pendingOffer = null;
+      state.dismissedOffers = state.dismissedOffers.filter((key) => key !== offerKey(result));
+      state.lastBookingResultId = result.requestId;
+      persist();
+      hideOffer();
+      render();
+      notice("Corte confirmado pela barbearia: <strong>" + longDate(result.date) + " às " + result.time + "</strong> com Igor.");
+      toast("Agendamento confirmado.");
+      return;
+    }
+    if (!samePending) return;
+    state.lastBookingResultId = result.requestId;
+    if (result.status === "booking_not_verified" || result.status === "unexpected_error") {
+      state.pendingOffer.status = "needs_check";
+      persist();
+      showOffer(state.pendingOffer, true);
+      notice("A barbearia não confirmou o resultado da tentativa. Verifique em “Meus agendamentos” antes de tentar de novo.");
+      return;
+    }
+    const failedOffer = { ...state.pendingOffer };
+    state.pendingOffer = null;
+    state.dismissedOffers = [offerKey(failedOffer), ...state.dismissedOffers].slice(0, 30);
+    persist();
+    hideOffer();
+    renderOffer();
+    notice("A reserva de " + longDate(result.date) + " às " + result.time + " não foi concluída. Atualize os horários para escolher outra vaga.");
+  }
+
+  async function checkBookingProgress() {
+    if (!state.pendingOffer?.requestId || state.pendingOffer.status === "needs_check") return;
+    try {
+      const savedResult = await workerRequest("BOOKING_RESULT");
+      if (savedResult?.requestId === state.pendingOffer.requestId) {
+        applyBookingResult(savedResult);
+        return;
+      }
+      const progress = await workerRequest("BOOKING_STATUS", { requestId: state.pendingOffer.requestId });
+      if (progress?.ok && progress.status === "completed" && progress.conclusion === "success") {
+        applyBookingResult({ ...state.pendingOffer, status: "booked" });
+      } else if (progress?.ok && progress.status === "completed" && progress.conclusion !== "success") {
+        state.pendingOffer.status = "needs_check";
+        persist();
+        showOffer(state.pendingOffer, true);
+        notice("A tentativa terminou sem confirmação. Verifique em “Ver ou desmarcar” se a reserva aparece antes de tentar outra vez.");
+      }
+    } catch {}
+  }
+
+  function startBookingPolling() {
+    if (bookingPollTimer) clearInterval(bookingPollTimer);
+    if (!state.pendingOffer?.requestId || state.pendingOffer.status === "needs_check") return;
+    checkBookingProgress();
+    bookingPollTimer = setInterval(() => {
+      if (!state.pendingOffer?.requestId || state.pendingOffer.status === "needs_check") {
+        clearInterval(bookingPollTimer);
+        bookingPollTimer = null;
+        return;
+      }
+      checkBookingProgress();
+    }, 7000);
   }
 
   function renderAvailability(date, elementId) {
@@ -358,14 +442,38 @@
   });
 
   document.getElementById("refresh").addEventListener("click", () => refreshAvailability(true));
-  document.getElementById("confirmOffer").addEventListener("click", () => {
+  document.getElementById("confirmOffer").addEventListener("click", async () => {
     if (!currentOffer) return;
-    state.pendingOffer = { ...currentOffer };
+    const offer = { date: currentOffer.date, time: currentOffer.time };
+    const requestId = crypto.randomUUID();
+    state.pendingOffer = { ...offer, requestId, status: "processing" };
     state.dismissedOffers = state.dismissedOffers.filter((key) => key !== offerKey(currentOffer));
     persist();
     showOffer(state.pendingOffer, true);
-    openOfficialOffer(state.pendingOffer);
-    toast("Data confirmada no app. Conclua na agenda oficial.");
+    let response;
+    try {
+      response = await workerRequest("BOOK_OFFER", { ...offer, requestId });
+    } catch {
+      state.pendingOffer.status = "needs_check";
+      persist();
+      showOffer(state.pendingOffer, true);
+      notice("A conexão caiu durante o envio. Confira seus agendamentos antes de tentar novamente.");
+      return;
+    }
+    if (!response?.ok) {
+      state.pendingOffer = null;
+      persist();
+      showOffer(offer);
+      const message = response?.error === "booking_not_activated"
+        ? "A reserva direta ainda não está ativada neste aparelho. Vou concluir essa configuração e avisar você."
+        : response?.error === "booking_access_expired"
+          ? "O acesso da reserva direta expirou. É preciso renovar a ativação antes de confirmar."
+          : "Não foi possível enviar a reserva agora. Tente novamente em instantes.";
+      notice(message);
+      return;
+    }
+    toast("Pedido enviado. Conferindo a reserva.");
+    startBookingPolling();
   });
   document.getElementById("dismissOffer").addEventListener("click", () => {
     if (!currentOffer) return;
@@ -375,18 +483,6 @@
     persist();
     hideOffer();
     toast("Esta opção foi dispensada.");
-  });
-  document.getElementById("markBooked").addEventListener("click", () => {
-    if (!state.pendingOffer) return;
-    const offer = state.pendingOffer;
-    state.appointments[offer.date] = offer.time;
-    state.pendingOffer = null;
-    state.dismissedOffers = state.dismissedOffers.filter((key) => key !== offerKey(offer));
-    persist();
-    hideOffer();
-    render();
-    notice("Agendamento salvo no aplicativo: <strong>" + longDate(offer.date) + " às " + offer.time + "</strong>.");
-    toast("Agendamento registrado no app.");
   });
   document.getElementById("save").addEventListener("click", () => {
     const date = document.getElementById("anchorInput").value;
@@ -440,8 +536,11 @@
 
   const linkedOffer = offerFromLocation();
   render();
-  if (linkedOffer) showOffer(linkedOffer);
-  else if (state.pendingOffer) showOffer(state.pendingOffer, true);
-  registerServiceWorker();
+  if (state.pendingOffer) showOffer(state.pendingOffer, true);
+  else if (linkedOffer) showOffer(linkedOffer);
+  navigator.serviceWorker?.addEventListener("message", (event) => {
+    if (event.data?.type === "BOOKING_RESULT") applyBookingResult(event.data.result);
+  });
+  registerServiceWorker().then(startBookingPolling);
   refreshAvailability(false);
 }());

@@ -1,4 +1,4 @@
-const CACHE_NAME = "ciclo-do-corte-v5";
+const CACHE_NAME = "ciclo-do-corte-v6";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
 const APP_SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
@@ -30,8 +30,25 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type !== "STATE") return;
-  event.waitUntil(saveText("state.json", JSON.stringify(event.data.state)));
+  if (event.data?.type === "STATE") {
+    event.waitUntil(saveText("state.json", JSON.stringify(event.data.state)));
+    return;
+  }
+  if (event.data?.type === "BOOK_OFFER") {
+    event.waitUntil(replyTo(event, () => dispatchBooking(event.data)));
+    return;
+  }
+  if (event.data?.type === "BOOKING_STATUS") {
+    event.waitUntil(replyTo(event, () => bookingStatus(event.data.requestId)));
+    return;
+  }
+  if (event.data?.type === "BOOKING_SETUP") {
+    event.waitUntil(replyTo(event, async () => ({ ready: Boolean(await readText("booking-token.txt")) })));
+    return;
+  }
+  if (event.data?.type === "BOOKING_RESULT") {
+    event.waitUntil(replyTo(event, async () => JSON.parse(await readText("booking-result.json") || "null")));
+  }
 });
 
 self.addEventListener("periodicsync", (event) => {
@@ -43,7 +60,13 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data?.json() || null;
   } catch {}
-  event.waitUntil(payload?.test ? showTestNotification() : checkAvailability(payload));
+  if (payload?.bookingActivationToken) {
+    event.waitUntil(activateBooking(payload.bookingActivationToken));
+  } else if (payload?.bookingResult) {
+    event.waitUntil(showBookingResult(payload.bookingResult));
+  } else {
+    event.waitUntil(payload?.test ? showTestNotification() : checkAvailability(payload));
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -71,6 +94,85 @@ async function showTestNotification() {
     renotify: true,
     data: { url: self.registration.scope }
   });
+}
+
+async function replyTo(event, callback) {
+  const port = event.ports?.[0];
+  if (!port) return;
+  try {
+    port.postMessage(await callback());
+  } catch {
+    port.postMessage({ ok: false, error: "connection_failed" });
+  }
+}
+
+async function githubRequest(path, options = {}) {
+  const token = await readText("booking-token.txt");
+  if (!token) return { missingToken: true };
+  const response = await fetch("https://api.github.com/repos/5575dd/ciclo-do-corte/" + path, {
+    ...options,
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: "Bearer " + token,
+      "x-github-api-version": "2022-11-28",
+      ...(options.body ? { "content-type": "application/json" } : {})
+    }
+  });
+  return { response };
+}
+
+async function dispatchBooking({ date, time, requestId }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") ||
+      !/^\d{2}:\d{2}$/.test(time || "") ||
+      !/^[0-9a-f-]{36}$/.test(requestId || "")) return { ok: false, error: "invalid_offer" };
+  const { response, missingToken } = await githubRequest("actions/workflows/book-haircut.yml/dispatches", {
+    method: "POST",
+    body: JSON.stringify({ ref: "main", inputs: { date, time, request_id: requestId, dry_run: "false" } })
+  });
+  if (missingToken) return { ok: false, error: "booking_not_activated" };
+  return response.status === 204
+    ? { ok: true }
+    : { ok: false, error: response.status === 401 || response.status === 403 ? "booking_access_expired" : "booking_request_failed" };
+}
+
+async function bookingStatus(requestId) {
+  if (!/^[0-9a-f-]{36}$/.test(requestId || "")) return { ok: false, error: "invalid_request" };
+  const { response, missingToken } = await githubRequest("actions/workflows/book-haircut.yml/runs?event=workflow_dispatch&per_page=30");
+  if (missingToken) return { ok: false, error: "booking_not_activated" };
+  if (!response.ok) return { ok: false, error: "status_unavailable" };
+  const payload = await response.json();
+  const run = payload.workflow_runs?.find((item) => item.display_title?.includes(requestId));
+  return { ok: true, status: run?.status || "queued", conclusion: run?.conclusion || null };
+}
+
+async function activateBooking(token) {
+  if (typeof token !== "string" || token.length < 20) return;
+  await saveText("booking-token.txt", token);
+  await self.registration.showNotification("Reserva direta ativada", {
+    body: "Agora você pode tocar em Confirmar no Ciclo do Corte para reservar o horário.",
+    icon: new URL("icon.svg", self.registration.scope).href,
+    badge: new URL("icon.svg", self.registration.scope).href,
+    tag: "haircut-booking-activation",
+    data: { url: self.registration.scope }
+  });
+}
+
+async function showBookingResult(result) {
+  if (!result || !/^\d{4}-\d{2}-\d{2}$/.test(result.date || "") || !/^\d{2}:\d{2}$/.test(result.time || "")) return;
+  await saveText("booking-result.json", JSON.stringify(result));
+  const booked = result.status === "booked" || result.status === "already_booked";
+  await self.registration.showNotification(booked ? "Corte marcado" : "Reserva não concluída", {
+    body: booked
+      ? result.date.split("-").reverse().join("/") + " às " + result.time + " com Igor. Toque para ver no app."
+      : "A vaga não foi confirmada na barbearia. Abra o app para tentar outra opção.",
+    icon: new URL("icon.svg", self.registration.scope).href,
+    badge: new URL("icon.svg", self.registration.scope).href,
+    tag: "haircut-booking-result",
+    renotify: true,
+    data: { url: self.registration.scope }
+  });
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of windows) client.postMessage({ type: "BOOKING_RESULT", result });
 }
 
 async function saveText(name, value) {
