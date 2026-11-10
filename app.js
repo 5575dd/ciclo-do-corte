@@ -607,6 +607,12 @@
   else if (linkedOffer) showOffer(linkedOffer);
   navigator.serviceWorker?.addEventListener("message", (event) => {
     if (event.data?.type === "BOOKING_RESULT") applyBookingResult(event.data.result);
+    if (event.data?.type === "OFFICIAL_APPOINTMENTS" && event.data.appointments && typeof event.data.appointments === "object") {
+      state.appointments = event.data.appointments;
+      persist();
+      render();
+      notice("Agendamentos atualizados conforme o site oficial da barbearia.");
+    }
     if (event.data?.type === "BOOKING_ACTIVATED") refreshBookingSetup();
     if (event.data?.type === "PUSH_DIAGNOSTICS") refreshPushDiagnostics();
   });

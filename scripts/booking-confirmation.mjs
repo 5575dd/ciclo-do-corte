@@ -73,3 +73,19 @@ export function hasOfficialBooking(html, { date, time, anyService = false, anyTi
     return /(^|\s)corte(\s|\+|$)/.test(serviceLabel);
   });
 }
+
+export function extractOfficialHaircuts(html) {
+  const bookings = [];
+  for (const card of bookingCards(String(html || ""))) {
+    const text = normalizeText(card);
+    const dateMatch = text.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
+    const timeMatch = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    const service = dateMatch ? text.slice(0, dateMatch.index) : "";
+    if (!text.includes("profissional: igor freitas") || !dateMatch || !timeMatch || !/(^|\s)corte(\s|\+|$)/.test(service)) continue;
+    bookings.push({
+      date: `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`,
+      time: `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`
+    });
+  }
+  return Object.fromEntries(bookings.map(({ date, time }) => [date, time]));
+}

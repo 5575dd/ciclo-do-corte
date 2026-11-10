@@ -1,6 +1,6 @@
-const CACHE_NAME = "ciclo-do-corte-v11";
+const CACHE_NAME = "ciclo-do-corte-v12";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
-const APP_SHELL = ["./", "./index.html", "./app.js?v=11", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
+const APP_SHELL = ["./", "./index.html", "./app.js?v=12", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all(
@@ -79,11 +79,13 @@ self.addEventListener("push", (event) => {
     const receivedAt = new Date().toISOString();
     const type = payload?.bookingActivationToken ? "activation"
       : payload?.bookingResult ? "booking-result"
-        : payload?.test ? "test" : "availability";
+        : payload?.officialAppointments ? "appointments-sync"
+          : payload?.test ? "test" : "availability";
     await savePushDiagnostics({ receivedAt, type, status: "received" });
     try {
       if (type === "activation") await activateBooking(payload.bookingActivationToken);
       else if (type === "booking-result") await showBookingResult(payload.bookingResult);
+      else if (type === "appointments-sync") await showOfficialAppointments(payload.officialAppointments);
       else if (type === "test") await showTestNotification();
       else {
         await checkAvailability(payload);
@@ -206,6 +208,24 @@ async function showBookingResult(result) {
   });
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   for (const client of windows) client.postMessage({ type: "BOOKING_RESULT", result });
+}
+
+async function showOfficialAppointments(appointments) {
+  if (!appointments || typeof appointments !== "object" || Array.isArray(appointments)) return;
+  const clean = Object.fromEntries(Object.entries(appointments).filter(([date, time]) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time)
+  ));
+  await saveText("official-appointments.json", JSON.stringify({ appointments: clean, syncedAt: new Date().toISOString() }));
+  await self.registration.showNotification("Agendamentos sincronizados", {
+    body: `${Object.keys(clean).length} corte(s) conferidos no site da barbearia. Toque para abrir o app.`,
+    icon: new URL("icon.svg", self.registration.scope).href,
+    badge: new URL("icon.svg", self.registration.scope).href,
+    tag: "official-appointments-sync",
+    renotify: true,
+    data: { url: self.registration.scope }
+  });
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of windows) client.postMessage({ type: "OFFICIAL_APPOINTMENTS", appointments: clean });
 }
 
 async function saveText(name, value) {
