@@ -48,6 +48,8 @@ jobs:
           node-version: "20"
       - name: Preparar avisos
         run: npm install --omit=dev
+      - name: Conferir leitura dos agendamentos
+        run: node --test scripts/booking-confirmation.test.mjs
       - name: Reservar e conferir no sistema oficial
         run: node scripts/book-offer.mjs
       - name: Enviar resultado ao aplicativo

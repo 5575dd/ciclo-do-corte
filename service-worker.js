@@ -1,6 +1,6 @@
-const CACHE_NAME = "ciclo-do-corte-v10";
+const CACHE_NAME = "ciclo-do-corte-v11";
 const STATE_CACHE = "ciclo-do-corte-state-v1";
-const APP_SHELL = ["./", "./index.html", "./app.js?v=10", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
+const APP_SHELL = ["./", "./index.html", "./app.js?v=11", "./manifest.webmanifest", "./icon.svg", "./data/push-config.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => Promise.all(
@@ -191,10 +191,13 @@ async function showBookingResult(result) {
   if (!result || !/^\d{4}-\d{2}-\d{2}$/.test(result.date || "") || !/^\d{2}:\d{2}$/.test(result.time || "")) return;
   await saveText("booking-result.json", JSON.stringify(result));
   const booked = result.status === "booked" || result.status === "already_booked";
-  await self.registration.showNotification(booked ? "Corte marcado" : "Reserva não concluída", {
+  const needsCheck = result.status === "booking_not_verified" || result.status === "unexpected_error";
+  await self.registration.showNotification(booked ? "Corte marcado" : needsCheck ? "Confira o agendamento" : "Reserva não concluída", {
     body: booked
       ? result.date.split("-").reverse().join("/") + " às " + result.time + " com Igor. Toque para ver no app."
-      : "A vaga não foi confirmada na barbearia. Abra o app para tentar outra opção.",
+      : needsCheck
+        ? "A tentativa pode ter sido registrada. Não reserve novamente antes de conferir “Meus Agendamentos” no site da barbearia. Toque para abrir o app."
+        : "A reserva não foi registrada. Abra o app para ver o resultado e as próximas opções.",
     icon: new URL("icon.svg", self.registration.scope).href,
     badge: new URL("icon.svg", self.registration.scope).href,
     tag: "haircut-booking-result",

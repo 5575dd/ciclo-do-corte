@@ -165,7 +165,7 @@
     document.getElementById("offerTitle").textContent = longDate(offer.date) + " às " + offer.time;
     document.getElementById("offerText").textContent = pending
       ? (offer.status === "needs_check"
-        ? "Não foi possível confirmar o resultado. Consulte seus agendamentos antes de tentar novamente."
+        ? "A tentativa pode ter sido registrada. Não toque em reservar de novo. Confira primeiro “Meus agendamentos” no site da barbearia."
         : "Enviamos sua confirmação. O aplicativo mostrará o resultado após conferir a agenda da barbearia.")
       : "Toque para reservar este corte com Igor. O aplicativo conferirá a vaga e mostrará o resultado.";
     document.getElementById("confirmOffer").hidden = pending;
@@ -274,7 +274,7 @@
       state.pendingOffer.status = "needs_check";
       persist();
       showOffer(state.pendingOffer, true);
-      notice("A barbearia não confirmou o resultado da tentativa. Verifique em “Meus agendamentos” antes de tentar de novo.");
+      notice("A tentativa pode ter sido registrada, mas a confirmação não chegou. Não tente reservar de novo antes de conferir “Meus agendamentos” no site da barbearia.");
       return;
     }
     const failedOffer = { ...state.pendingOffer };

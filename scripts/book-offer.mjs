@@ -1,4 +1,5 @@
 import { writeFile } from "node:fs/promises";
+import { hasOfficialBooking } from "./booking-confirmation.mjs";
 
 const SHOP = "https://bmsistemasdev.site/app/barbeariafreitas1029/";
 const API = "https://bmsistemasdev.site/app/API/horariosLivres.php";
@@ -79,17 +80,6 @@ async function officialBookings() {
   return response.text();
 }
 
-function hasBooking(html, { anyService = false, anyTime = false } = {}) {
-  const dateBr = date.split("-").reverse().join("/");
-  const escaped = `${dateBr} às ${time}`;
-  const blocks = html.split(/<div\s+class="list-group-item\b/gi).slice(1);
-  return blocks.some((block) => {
-    const part = block.slice(0, 800);
-    return part.includes(anyTime ? dateBr + " às " : escaped) && part.includes("Profissional: Igor Freitas")
-      && (anyService || /<strong>\s*Corte\b[^<]*<\/strong>/i.test(part));
-  });
-}
-
 async function availableSlots() {
   const url = new URL(API);
   url.searchParams.set("profissional", PROFESSIONAL);
@@ -132,16 +122,30 @@ async function saveResult(status) {
   console.log(`BOOKING_RESULT=${status}`);
 }
 
+const verificationDelays = [0, 2_000, 5_000, 10_000, 20_000, 35_000];
+async function verifyBookingAfterSubmission() {
+  for (const delay of verificationDelays) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const bookings = await officialBookings();
+      if (hasOfficialBooking(bookings, { date, time })) return true;
+    } catch {
+      // A transient failure to read the agenda is not proof that the POST failed.
+    }
+  }
+  return false;
+}
+
 try {
   validateRequest();
   if (!dryRun) {
     const before = await officialBookings();
-    if (hasBooking(before)) {
+    if (hasOfficialBooking(before, { date, time })) {
       await saveResult("already_booked");
       process.exit(0);
     }
-    if (hasBooking(before, { anyTime: true })) throw new Error("date_already_booked");
-    if (hasBooking(before, { anyService: true })) throw new Error("time_already_booked");
+    if (hasOfficialBooking(before, { date, anyTime: true })) throw new Error("date_already_booked");
+    if (hasOfficialBooking(before, { date, time, anyService: true })) throw new Error("time_already_booked");
   }
 
   const { cookie, fields } = await prepareOfficialForm();
@@ -160,27 +164,27 @@ try {
   body.set("nome", name);
   body.set("contato", phone);
   body.set("email", "");
-  const response = await fetch(`${SHOP}insertAPI.php`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      origin: new URL(SHOP).origin,
-      referer: `${SHOP}horario.php`,
-      cookie
-    },
-    body,
-    redirect: "manual",
-    signal: AbortSignal.timeout(20_000)
-  });
-  if (response.status >= 500) throw new Error("official_site_unavailable");
+  try {
+    await fetch(`${SHOP}insertAPI.php`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: new URL(SHOP).origin,
+        referer: `${SHOP}horario.php`,
+        cookie
+      },
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000)
+    });
+  } catch {
+    // The server may have accepted the appointment before the connection failed.
+    // Always reconcile against the official agenda before reporting the outcome.
+  }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const after = await officialBookings();
-    if (hasBooking(after)) {
-      await saveResult("booked");
-      process.exit(0);
-    }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1500));
+  if (await verifyBookingAfterSubmission()) {
+    await saveResult("booked");
+    process.exit(0);
   }
   throw new Error("booking_not_verified");
 } catch (error) {
